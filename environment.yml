@@ -15,6 +15,7 @@ dependencies:
   - mkdocs
   - mkdocs-material
   - nbdev
+  - typer
   - tqdm
   - pip
   
