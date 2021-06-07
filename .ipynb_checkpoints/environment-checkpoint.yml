@@ -1,0 +1,27 @@
+name: ElectricInsights
+
+channels:
+  - conda-forge
+  - fastai
+  
+dependencies:
+  - python>=3.7
+  - pandas
+  - matplotlib
+  - jupyterlab
+  - lxml
+  - seaborn
+  - twine
+  - mkdocs
+  - mkdocs-material
+  - nbdev
+  - tqdm
+  - pip
+  
+  - pip:
+      - -e .
+      - moepy
+      - mkdocs-material-extensions
+      - mkdocstrings
+      - configparser
+      - junix
