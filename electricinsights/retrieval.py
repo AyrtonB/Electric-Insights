@@ -229,8 +229,12 @@ def get_EI_data(
     }
 ):
     # Preparing batch dates
-    *batch_start_dates, post_batch_start_date = pd.date_range(start_date, end_date, freq=f'{batch_freq}S').strftime('%Y-%m-%d')
-    pre_batch_end_date, *batch_end_dates = (pd.date_range(start_date, end_date, freq=batch_freq)+pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+    if (pd.to_datetime(end_date) - pd.to_datetime(start_date)) > pd.Timedelta(10, 'w'):
+        *batch_start_dates, post_batch_start_date = pd.date_range(start_date, end_date, freq=f'{batch_freq}S').strftime('%Y-%m-%d')
+        pre_batch_end_date, *batch_end_dates = (pd.date_range(start_date, end_date, freq=batch_freq)+pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+    else:
+        batch_start_dates, batch_end_dates = [], []
+        pre_batch_end_date, post_batch_start_date = end_date, end_date
 
     batch_date_pairs = list(zip(batch_start_dates, batch_end_dates))
 
@@ -288,7 +292,7 @@ def check_for_gappy_data(data_dir):
             warn(f'There are {len(missing_dates)} missing dates in the {year} dataframe')
 
 # Cell
-def retrieve_latest_data(data_dir):
+def retrieve_latest_data(data_dir='data'):
     EI_files = get_EI_files(data_dir)
     EI_years_downloaded = [int(f.split('_')[-1].split('.')[0]) for f in EI_files]
 
