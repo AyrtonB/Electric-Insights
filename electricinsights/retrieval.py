@@ -262,7 +262,7 @@ def bulk_retrieval(start_year=2009, end_year=2020, data_dir='data'):
     """
     EI_files = get_EI_files(data_dir)
 
-    for year in range(start_year, end_year+1):
+    for year in range(int(start_year), int(end_year)+1):
         if f'electric_insights_{year}.csv' not in EI_files:
             start_date, end_date = f'{year}-01-01 00:00', f'{year}-12-31 23:30'
             df_EI = get_EI_data(start_date, end_date)
