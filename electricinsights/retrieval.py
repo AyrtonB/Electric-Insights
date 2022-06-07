@@ -520,7 +520,7 @@ def year_to_resource(year=2009):
 def construct_datapackage(start_year=2009, end_year=2021):
     datapackage = {
       "profile": "tabular-data-package",
-      "resources": [year_to_resource(year) for year in range(start_year, end_year+1)],
+      "resources": [year_to_resource(year) for year in range(int(start_year), int(end_year)+1)],
       "keywords": [
         "electric insights"
       ],
