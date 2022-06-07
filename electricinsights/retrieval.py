@@ -22,7 +22,6 @@ from tqdm import tqdm
 def query_API(start_date:str, end_date:str, stream:str, time_group='30m'):
     """
     'Query API' makes the call to Electric Insights and returns the JSON response
-
     Parameters:
         start_date: Start date for data given as a string in the form '%Y-%m-%d'
         end_date: End date for data given as a string in the form '%Y-%m-%d'
@@ -44,12 +43,17 @@ def query_API(start_date:str, end_date:str, stream:str, time_group='30m'):
     end_date = format_dt(end_date)
 
     # Running query and parsing response
-    response = requests.get(f'http://drax-production.herokuapp.com/api/1/{stream}?date_from={start_date}&date_to={end_date}&group_by={time_group}')
-    r_json = response.json()
+    url = f'http://drax-production.herokuapp.com/api/1/{stream}?date_from={start_date}&date_to={end_date}&group_by={time_group}'
+    r = requests.get(url)
+    
+    try:
+        r_json = r.json()
+    except Exception as e:
+        raise ValueError(f'Failed for\nstream: {stream}\ndate_from: {start_date}\ndate_to: {end_date}\ngroup_by: {time_group}\n\n{url}\n\n{e}')
 
     return r_json
 
-# Cell
+
 def dict_col_to_cols(df:pd.DataFrame, value_col='value'):
     """Checks the `value_col`, if it contains dictionaries these are transformed into new columns which then replace it"""
 
@@ -64,7 +68,7 @@ def dict_col_to_cols(df:pd.DataFrame, value_col='value'):
 
     return df
 
-# Cell
+
 def clean_nested_dict_cols(df):
     """Unpacks columns contining nested dictionaries"""
     # Calculating columns that are still dictionaries
@@ -82,7 +86,7 @@ def clean_nested_dict_cols(df):
 
     return df
 
-# Cell
+
 def set_dt_idx(df:pd.DataFrame, idx_name='local_datetime'):
     """
     Converts the start datetime to UK local time, then sets it as the index and removes the original datetime columns
@@ -132,11 +136,10 @@ def clean_df_dts(df):
 
     return df
 
-# Cell
+
 def retrieve_stream_df(start_date:str, end_date:str, stream:str, time_group='30m', renaming_dict={}):
     """
     Makes the call to Electric Insights and parses the response into a dataframe which is returned
-
     Parameters:
         start_date: Start date for data given as a string in the form '%Y-%m-%d'
         end_date: End date for data given as a string in the form '%Y-%m-%d'
@@ -166,7 +169,7 @@ def retrieve_stream_df(start_date:str, end_date:str, stream:str, time_group='30m
 
     return df
 
-# Cell
+
 def check_streams(streams='*'):
     """
     Checks that the streams given are a list containing only possible streams, or is all streams - '*'.
@@ -189,11 +192,10 @@ def check_streams(streams='*'):
     else:
         raise ValueError(f"Streams could not be recognised, must be one of: {', '.join(possible_streams)}")
 
-# Cell
+
 def retrieve_streams_df(start_date:str, end_date:str, streams='*', time_group='30m', renaming_dict={}):
     """
     Makes the calls to Electric Insights for the given streams and parses the responses into a dataframe which is returned
-
     Parameters:
         start_date: Start date for data given as a string in the form '%Y-%m-%d'
         end_date: End date for data given as a string in the form '%Y-%m-%d'
@@ -207,15 +209,17 @@ def retrieve_streams_df(start_date:str, end_date:str, streams='*', time_group='3
     for stream in streams:
         df_stream = retrieve_stream_df(start_date, end_date, stream, renaming_dict=renaming_dict)
         df[df_stream.columns] = df_stream
+        
+        # time.sleep(5)
 
     return df
 
-# Cell
+
 def get_EI_data(
     start_date,
     end_date,
     streams='*',
-    batch_freq='3M',
+    batch_freq='1M',
     renaming_dict={
         'pumpedStorage' : 'pumped_storage',
         'northernIreland' : 'northern_ireland',
@@ -230,34 +234,35 @@ def get_EI_data(
 ):
     # Preparing batch dates
     if (pd.to_datetime(end_date) - pd.to_datetime(start_date)) > pd.Timedelta(10, 'w'):
-        *batch_start_dates, post_batch_start_date = pd.date_range(start_date, end_date, freq=f'{batch_freq}S').strftime('%Y-%m-%d')
-        pre_batch_end_date, *batch_end_dates = (pd.date_range(start_date, end_date, freq=batch_freq)+pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+        *batch_start_dates, _ = pd.date_range(start_date, end_date, freq=f'{batch_freq}S').strftime('%Y-%m-%d')
+        *batch_end_dates, post_batch_end_date = (pd.date_range(start_date, end_date, freq=batch_freq)+pd.Timedelta(days=1)).strftime('%Y-%m-%d')
     else:
         batch_start_dates, batch_end_dates = [], []
-        pre_batch_end_date, post_batch_start_date = end_date, end_date
+        post_batch_start_date, post_batch_end_date = start_date, end_date
 
-    batch_date_pairs = list(zip(batch_start_dates, batch_end_dates))
+    post_batch_start_date = batch_end_dates[-1]
+    batch_date_pairs = list(zip(batch_start_dates, batch_end_dates)) + [(post_batch_start_date, post_batch_end_date)]
 
-    if start_date != pre_batch_end_date:
-        batch_date_pairs = [(start_date, pre_batch_end_date)] + batch_date_pairs
+    if pd.to_datetime(start_date).strftime('%Y-%m-%d') != batch_start_dates[0]:
+        batch_date_pairs = [(start_date, batch_start_dates[0])] + batch_date_pairs
 
-    if end_date != post_batch_start_date:
+    if pd.to_datetime(end_date).strftime('%Y-%m-%d') != batch_end_dates[-1]:
         end_date = (pd.to_datetime(end_date) + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
-        batch_date_pairs = batch_date_pairs + [(post_batch_start_date, end_date)]
+        batch_date_pairs = batch_date_pairs + [(batch_end_dates[-1], end_date)]
 
     # Retrieving data
     df = pd.DataFrame()
 
     for batch_start_date, batch_end_date in tqdm(batch_date_pairs):
         df_batch = retrieve_streams_df(batch_start_date, batch_end_date, streams, renaming_dict=renaming_dict)
-        df = df.append(df_batch)
+        df = pd.concat([df, df_batch])
 
     return df
 
-# Cell
+
 get_EI_files = lambda data_dir: [f for f in os.listdir(data_dir) if 'csv' in f]
 
-def bulk_retrieval(start_year=2009, end_year=2020, data_dir='data'):
+def bulk_retrieval(start_year=2009, end_year=2020, data_dir='data', batch_freq='1M'):
     """Retrieves and saves in batches of years
     """
     EI_files = get_EI_files(data_dir)
@@ -265,12 +270,12 @@ def bulk_retrieval(start_year=2009, end_year=2020, data_dir='data'):
     for year in range(int(start_year), int(end_year)+1):
         if f'electric_insights_{year}.csv' not in EI_files:
             start_date, end_date = f'{year}-01-01 00:00', f'{year}-12-31 23:30'
-            df_EI = get_EI_data(start_date, end_date)
+            df_EI = get_EI_data(start_date, end_date, batch_freq=batch_freq)
             df_EI.to_csv(f'{data_dir}/electric_insights_{year}.csv')
 
     return
 
-# Cell
+
 def check_for_gappy_data(data_dir):
     EI_files = get_EI_files(data_dir)
 
@@ -291,8 +296,8 @@ def check_for_gappy_data(data_dir):
         if len(missing_dates) > 0:
             warn(f'There are {len(missing_dates)} missing dates in the {year} dataframe')
 
-# Cell
-def retrieve_latest_data(data_dir='data'):
+
+def retrieve_latest_data(data_dir='data', batch_freq='1M'):
     EI_files = get_EI_files(data_dir)
     EI_years_downloaded = [int(f.split('_')[-1].split('.')[0]) for f in EI_files]
 
@@ -300,7 +305,7 @@ def retrieve_latest_data(data_dir='data'):
 
     if current_ts.year not in EI_years_downloaded:
         start_date, end_date = f'{current_ts.year}-01-01 00:00', current_ts.strftime('%Y-%m-%d %H:%M')
-        df_EI = get_EI_data(start_date, end_date)
+        df_EI = get_EI_data(start_date, end_date, batch_freq=batch_freq)
         df_EI.to_csv(f'{data_dir}/electric_insights_{current_ts.year}.csv')
 
     else:
@@ -315,9 +320,9 @@ def retrieve_latest_data(data_dir='data'):
             end_date = dt_rng[-1]
 
             try:
-                df_EI_latest = get_EI_data(start_date, end_date)
+                df_EI_latest = get_EI_data(start_date, end_date, batch_freq=batch_freq)
                 df_EI_trimmed = df_EI.drop(list(set(df_EI_latest.index) - (set(df_EI_latest.index) - set(df_EI.index))))
-                df_EI_combined = df_EI_trimmed.append(df_EI_latest)
+                df_EI_combined = pd.concat([df_EI_trimmed, df_EI_latest])
                 df_EI_combined.to_csv(f'{data_dir}/electric_insights_{current_ts.year}.csv')
             except:
                 warn(f'Could not retrieve any new data between {start_date} and {end_date}')
